@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useFirebaseAuth } from './context/FirebaseAuthContext';
+import { GoogleLoginButton } from './components/auth/GoogleLoginButton';
 import { KnowledgeLevel, Course, View, Article, DefinitionState } from './types';
 import { useAppContext } from './context/AppContext';
 import { useTheme } from './context/ThemeContext';
@@ -144,6 +146,7 @@ function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const { user: firebaseUser } = useFirebaseAuth();
   
   const { isDark } = useTheme();
   const {
@@ -284,6 +287,11 @@ function App() {
         </main>
       </div>
 
+      {!firebaseUser && (
+        <div className="fixed bottom-6 left-6 z-20">
+          <GoogleLoginButton />
+        </div>
+      )}
       {!activeArticle && <AIChatButton />}
       <AIChatModal />
       <ArticleTutorModal />
