@@ -36,17 +36,66 @@ CREATE TABLE IF NOT EXISTS user_achievements (
   earned_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- Learning Plans Table
+CREATE TABLE IF NOT EXISTS user_learning_plans (
+  id TEXT PRIMARY KEY,
+  user_id TEXT REFERENCES user_profiles(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  start_date DATE NOT NULL,
+  duration INTEGER NOT NULL, -- days
+  status TEXT DEFAULT 'active' CHECK (status IN ('active', 'completed', 'paused', 'archived')),
+  folder_id TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Daily Tasks for Learning Plans
+CREATE TABLE IF NOT EXISTS user_daily_tasks (
+  id TEXT PRIMARY KEY,
+  plan_id TEXT REFERENCES user_learning_plans(id) ON DELETE CASCADE,
+  user_id TEXT REFERENCES user_profiles(id) ON DELETE CASCADE,
+  course_id TEXT NOT NULL,
+  task_date DATE NOT NULL,
+  is_completed BOOLEAN DEFAULT FALSE,
+  completed_at TIMESTAMP WITH TIME ZONE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Learning Goals (like daily quests but more structured)
+CREATE TABLE IF NOT EXISTS user_learning_goals (
+  id TEXT PRIMARY KEY,
+  user_id TEXT REFERENCES user_profiles(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT,
+  target_date DATE,
+  is_completed BOOLEAN DEFAULT FALSE,
+  completed_at TIMESTAMP WITH TIME ZONE,
+  goal_type TEXT DEFAULT 'custom' CHECK (goal_type IN ('daily', 'weekly', 'monthly', 'custom')),
+  metadata JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- Create indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_user_data_user_id ON user_data(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_data_type ON user_data(data_type);
 CREATE INDEX IF NOT EXISTS idx_user_courses_user_id ON user_courses(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_achievements_user_id ON user_achievements(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_learning_plans_user_id ON user_learning_plans(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_daily_tasks_plan_id ON user_daily_tasks(plan_id);
+CREATE INDEX IF NOT EXISTS idx_user_daily_tasks_user_id ON user_daily_tasks(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_daily_tasks_date ON user_daily_tasks(task_date);
+CREATE INDEX IF NOT EXISTS idx_user_learning_goals_user_id ON user_learning_goals(user_id);
 
 -- Disable RLS for simplicity (Firebase Auth only on client)
 ALTER TABLE user_profiles DISABLE ROW LEVEL SECURITY;
 ALTER TABLE user_data DISABLE ROW LEVEL SECURITY;
 ALTER TABLE user_courses DISABLE ROW LEVEL SECURITY;
 ALTER TABLE user_achievements DISABLE ROW LEVEL SECURITY;
+ALTER TABLE user_learning_plans DISABLE ROW LEVEL SECURITY;
+ALTER TABLE user_daily_tasks DISABLE ROW LEVEL SECURITY;
+ALTER TABLE user_learning_goals DISABLE ROW LEVEL SECURITY;
 
 -- RLS policies removed
 
@@ -64,4 +113,13 @@ CREATE TRIGGER update_user_profiles_updated_at BEFORE UPDATE ON user_profiles
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER update_user_data_updated_at BEFORE UPDATE ON user_data
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_user_learning_plans_updated_at BEFORE UPDATE ON user_learning_plans
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_user_daily_tasks_updated_at BEFORE UPDATE ON user_daily_tasks
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_user_learning_goals_updated_at BEFORE UPDATE ON user_learning_goals
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();

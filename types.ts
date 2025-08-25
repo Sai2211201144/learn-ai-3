@@ -453,4 +453,4 @@ export interface ProjectTutorState {
 }
 
 
-export type View = 'planner' | 'assessment' | 'practice' | 'interview' | 'projects' | 'practice_quiz' | 'code_explainer' | 'profile' | 'login' | 'article_viewer' | 'habits';
+export type View = 'dashboard' | 'planner' | 'assessment' | 'practice' | 'interview' | 'projects' | 'practice_quiz' | 'code_explainer' | 'profile' | 'login' | 'article_viewer' | 'habits';

@@ -31,32 +31,53 @@ const initGapiClient = () => {
 };
 
 const initGisClient = () => {
-    return new Promise<void>((resolve) => {
-        tokenClient = google.accounts.oauth2.initTokenClient({
-            client_id: CLIENT_ID,
-            scope: SCOPES,
-            callback: '', // The callback is handled by the promise
-        });
-        gisInited = true;
-        resolve();
+    return new Promise<void>((resolve, reject) => {
+        try {
+            if (typeof google === 'undefined' || !google.accounts?.oauth2?.initTokenClient) {
+                reject(new Error('Google Identity Services not loaded'));
+                return;
+            }
+            
+            tokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: CLIENT_ID,
+                scope: SCOPES,
+                callback: '', // The callback is handled by the promise
+            });
+            gisInited = true;
+            resolve();
+        } catch (error) {
+            reject(error);
+        }
     });
 };
 
 export const initClients = async () => {
-    // Wait for the global gapi and google objects to be available
-    await new Promise<void>(resolve => {
-        const interval = setInterval(() => {
-            if (typeof gapi?.load === 'function' && typeof google?.accounts?.oauth2?.initTokenClient === 'function') {
-                clearInterval(interval);
-                resolve();
-            }
-        }, 100);
-    });
-    
-    await Promise.all([
-        initGapiClient(),
-        initGisClient()
-    ]);
+    try {
+        // Wait for the global gapi and google objects to be available
+        await new Promise<void>((resolve, reject) => {
+            let attempts = 0;
+            const maxAttempts = 100; // 10 seconds timeout
+            
+            const interval = setInterval(() => {
+                attempts++;
+                if (typeof gapi?.load === 'function' && typeof google?.accounts?.oauth2?.initTokenClient === 'function') {
+                    clearInterval(interval);
+                    resolve();
+                } else if (attempts >= maxAttempts) {
+                    clearInterval(interval);
+                    reject(new Error('Google APIs failed to load within timeout'));
+                }
+            }, 100);
+        });
+        
+        await Promise.all([
+            initGapiClient(),
+            initGisClient()
+        ]);
+    } catch (error) {
+        console.warn('Google Drive integration not available:', error);
+        // Don't throw - just log the warning
+    }
 };
 
 export const handleAuthClick = (): Promise<any> => {

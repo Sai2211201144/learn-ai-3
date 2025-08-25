@@ -1,28 +1,46 @@
 import React, { useState } from 'react';
 import { CloseIcon, CalendarDaysIcon, LoadingSpinnerIcon } from '../common/Icons';
+import { useFirebaseAuth } from '../../context/FirebaseAuthContext';
 
 interface CreatePlanModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onGenerate: (topic: string, duration?: number) => void;
 }
 
-const CreatePlanModal: React.FC<CreatePlanModalProps> = ({ isOpen, onClose, onGenerate }) => {
+const CreatePlanModal: React.FC<CreatePlanModalProps> = ({ isOpen, onClose }) => {
+    const { createUserLearningPlan } = useFirebaseAuth();
     const [topic, setTopic] = useState('');
     const [duration, setDuration] = useState<string>('ai');
     const [customDuration, setCustomDuration] = useState<number>(7);
     const [localError, setLocalError] = useState<string | null>(null);
+    const [isGenerating, setIsGenerating] = useState(false);
 
     if (!isOpen) return null;
 
-    const handleGenerateClick = () => {
+    const handleGenerateClick = async () => {
         if (!topic.trim()) {
             setLocalError("Please enter a topic to create a plan for.");
             return;
         }
-        const finalDuration = duration === 'custom' ? customDuration : undefined;
-        onGenerate(topic, finalDuration);
-        onClose();
+        
+        setIsGenerating(true);
+        setLocalError(null);
+        
+        try {
+            const finalDuration = duration === 'custom' ? customDuration : 7;
+            await createUserLearningPlan(`Learn ${topic}`, finalDuration);
+            
+            // Reset form
+            setTopic('');
+            setDuration('ai');
+            setCustomDuration(7);
+            onClose();
+        } catch (error) {
+            console.error('Failed to create learning plan:', error);
+            setLocalError('Failed to create learning plan. Please try again.');
+        } finally {
+            setIsGenerating(false);
+        }
     };
 
     return (
@@ -89,10 +107,11 @@ const CreatePlanModal: React.FC<CreatePlanModalProps> = ({ isOpen, onClose, onGe
                 <footer className="mt-6 pt-4 border-t border-[var(--color-border)] flex justify-end items-center flex-shrink-0">
                      <button 
                         onClick={handleGenerateClick} 
-                        disabled={!topic.trim()}
-                        className="px-6 py-3 bg-[var(--gradient-primary-accent)] text-white font-bold rounded-lg hover:opacity-90 shadow-lg disabled:opacity-50"
+                        disabled={!topic.trim() || isGenerating}
+                        className="px-6 py-3 bg-[var(--gradient-primary-accent)] text-white font-bold rounded-lg hover:opacity-90 shadow-lg disabled:opacity-50 flex items-center gap-2"
                      >
-                        Generate Plan
+                        {isGenerating && <LoadingSpinnerIcon className="w-5 h-5" />}
+                        {isGenerating ? 'Creating Plan...' : 'Create Plan'}
                     </button>
                 </footer>
             </div>

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View } from '../../types';
 import { LogoIcon, RectangleGroupIcon, Cog6ToothIcon, AcademicCapIcon, ClipboardDocumentCheckIcon, CloseIcon, WrenchScrewdriverIcon, CommandLineIcon, UserCircleIcon, PencilIcon, BookOpenIcon, HomeIcon, ChevronDownIcon, SparklesIcon, CalendarDaysIcon } from './Icons';
 import { useAppContext } from '../../context/AppContext';
+import { useFirebaseAuth } from '../../context/FirebaseAuthContext';
 
 interface SidebarProps {
     view: View;
@@ -65,7 +66,15 @@ const CollapsibleNavItem: React.FC<{
 };
 
 const UserProfile: React.FC = () => {
-    const { localUser: user } = useAppContext();
+    const { localUser } = useAppContext();
+    const { user: firebaseUser, userProfile } = useFirebaseAuth();
+
+    // Prefer Firebase user data, fallback to local user
+    const user = firebaseUser ? {
+        name: userProfile?.full_name || firebaseUser.displayName || 'User',
+        email: userProfile?.email || firebaseUser.email || '',
+        picture: userProfile?.avatar_url || firebaseUser.photoURL
+    } : localUser;
 
     if (!user) {
         return null;
@@ -124,6 +133,13 @@ const Sidebar: React.FC<SidebarProps> = ({ view, setView, isOpen, onClose, onOpe
                 </button>
             </div>
             <nav className="flex-grow space-y-1">
+                <NavItem
+                    icon={<HomeIcon className="w-6 h-6" />}
+                    label="Dashboard"
+                    isActive={view === 'dashboard'}
+                    onClick={() => handleNavigation('dashboard')}
+                />
+                
                 <CollapsibleNavItem icon={<RectangleGroupIcon className="w-6 h-6" />} label="Workspace" defaultOpen={true}>
                     <NavItem
                         icon={<CalendarDaysIcon className="w-6 h-6" />}

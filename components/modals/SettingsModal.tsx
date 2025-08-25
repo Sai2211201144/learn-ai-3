@@ -2,9 +2,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useTheme } from '../../context/ThemeContext';
 import { Theme, allThemes } from '../../styles/themes';
-import { CloseIcon, Cog6ToothIcon, LoadingSpinnerIcon, CheckCircleIcon, XCircleIcon } from '../common/Icons';
+import { CloseIcon, Cog6ToothIcon, LoadingSpinnerIcon, CheckCircleIcon, XCircleIcon, UserCircleIcon } from '../common/Icons';
 import * as driveService from '../../services/driveService';
 import * as storageService from '../../services/storageService';
+import { useFirebaseAuth } from '../../context/FirebaseAuthContext';
 
 interface SettingsModalProps {
     isOpen: boolean;
@@ -15,9 +16,21 @@ type BackupStatus = 'idle' | 'initializing' | 'authenticating' | 'backing up' | 
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     const { theme, setTheme } = useTheme();
+    const { user: firebaseUser, profile: userProfile, updateProfile, logout } = useFirebaseAuth();
     const [backupStatus, setBackupStatus] = useState<BackupStatus>('idle');
     const [backupMessage, setBackupMessage] = useState('');
     const importInputRef = useRef<HTMLInputElement>(null);
+    
+    // Profile editing state
+    const [isEditingProfile, setIsEditingProfile] = useState(false);
+    const [profileData, setProfileData] = useState({
+        full_name: userProfile?.full_name || '',
+        preferences: {
+            theme: (userProfile?.preferences?.theme || 'light') as 'light' | 'dark',
+            notifications: userProfile?.preferences?.notifications ?? true,
+            language: userProfile?.preferences?.language || 'en'
+        }
+    });
 
     useEffect(() => {
         if (isOpen) {
@@ -92,6 +105,33 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
         }
     };
 
+    const handleSaveProfile = async () => {
+        if (!updateProfile || !firebaseUser) return;
+        
+        try {
+            await updateProfile({
+                full_name: profileData.full_name,
+                preferences: profileData.preferences
+            });
+            setIsEditingProfile(false);
+        } catch (error) {
+            console.error('Failed to update profile:', error);
+            alert('Failed to update profile. Please try again.');
+        }
+    };
+
+    const handleCancelProfileEdit = () => {
+        setProfileData({
+            full_name: userProfile?.full_name || '',
+            preferences: {
+                theme: (userProfile?.preferences?.theme || 'light') as 'light' | 'dark',
+                notifications: userProfile?.preferences?.notifications ?? true,
+                language: userProfile?.preferences?.language || 'en'
+            }
+        });
+        setIsEditingProfile(false);
+    };
+
     const getBackupButtonContent = () => {
         switch (backupStatus) {
             case 'initializing': return <><LoadingSpinnerIcon className="w-5 h-5" /> Initializing...</>;
@@ -144,6 +184,93 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                                 ))}
                             </div>
                         </div>
+
+                        {/* Profile Section */}
+                        {firebaseUser && (
+                            <div>
+                                <h3 className="text-xl font-semibold text-[var(--color-foreground)] mb-3 flex items-center gap-2">
+                                    <UserCircleIcon className="w-6 h-6" />
+                                    Profile
+                                </h3>
+                                <div className="bg-[var(--color-secondary)] p-4 rounded-lg">
+                                    <div className="flex items-center gap-3 mb-4">
+                                        <img 
+                                            src={firebaseUser.photoURL || ''} 
+                                            alt="Profile" 
+                                            className="w-12 h-12 rounded-full"
+                                        />
+                                        <div>
+                                            <p className="font-semibold text-[var(--color-foreground)]">
+                                                {userProfile?.full_name || firebaseUser.displayName}
+                                            </p>
+                                            <p className="text-sm text-[var(--color-muted-foreground)]">
+                                                {userProfile?.email || firebaseUser.email}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    
+                                    {isEditingProfile ? (
+                                        <div className="space-y-3">
+                                            <div>
+                                                <label className="block text-sm font-medium text-[var(--color-foreground)] mb-1">
+                                                    Full Name
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={profileData.full_name}
+                                                    onChange={(e) => setProfileData({...profileData, full_name: e.target.value})}
+                                                    className="w-full px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded-md text-[var(--color-foreground)]"
+                                                />
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <input
+                                                    type="checkbox"
+                                                    id="notifications"
+                                                    checked={profileData.preferences.notifications}
+                                                    onChange={(e) => setProfileData({
+                                                        ...profileData, 
+                                                        preferences: {...profileData.preferences, notifications: e.target.checked}
+                                                    })}
+                                                    className="rounded"
+                                                />
+                                                <label htmlFor="notifications" className="text-sm text-[var(--color-foreground)]">
+                                                    Enable notifications
+                                                </label>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <button
+                                                    onClick={handleSaveProfile}
+                                                    className="px-3 py-2 bg-[var(--color-primary)] text-white rounded-md hover:opacity-90"
+                                                >
+                                                    Save
+                                                </button>
+                                                <button
+                                                    onClick={handleCancelProfileEdit}
+                                                    className="px-3 py-2 bg-[var(--color-muted)] text-[var(--color-foreground)] rounded-md hover:opacity-90"
+                                                >
+                                                    Cancel
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="flex gap-2">
+                                            <button
+                                                onClick={() => setIsEditingProfile(true)}
+                                                className="px-3 py-2 bg-[var(--color-primary)] text-white rounded-md hover:opacity-90"
+                                            >
+                                                Edit Profile
+                                            </button>
+                                            <button
+                                                onClick={logout}
+                                                className="px-3 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+                                            >
+                                                Sign Out
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
 
                         {/* Data Management Section */}
                         <div>

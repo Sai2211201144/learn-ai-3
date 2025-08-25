@@ -17,7 +17,7 @@ const GUEST_USER_DEFAULT: User = {
     articles: [],
     folders: [],
     learningPlans: [],
-    habits: [],
+    habits: []
 };
 
 interface AppContextType {
@@ -30,6 +30,7 @@ interface AppContextType {
     activeCourse: Course | null;
     activeProject: Project | null;
     activeArticle: Article | null;
+    activePlan: LearningPlan | null;
     topic: string; // for loading screen
     error: string | null;
     
@@ -103,6 +104,11 @@ interface AppContextType {
     closeCreateArticlesModal: () => void;
     handleBulkGenerateArticles: (syllabus: string, folderId: string) => Promise<void>;
     handleCreateLearningPlan: (topic: string, duration?: number) => void;
+    handleSelectPlan: (planId: string | null) => void;
+    handleDeletePlan: (planId: string) => void;
+    handleRescheduleTask: (planId: string, taskId: string, newDate: number) => void;
+    handleDeleteTaskFromPlan: (planId: string, taskId: string) => void;
+    handleToggleTaskComplete: (planId: string, taskId: string) => void;
 
     // Gamification & Interactivity
     unlockAchievement: (id: AchievementId) => void;
@@ -182,9 +188,7 @@ interface AppContextType {
     closeProjectTutorModal: () => void;
     handleGetProjectFeedback: (step: ProjectStep, userCode: string) => void;
 
-    // Planner CRUD
-    handleRescheduleTask: (planId: string, taskId: string, newDate: number) => void;
-    handleDeleteTaskFromPlan: (planId: string, taskId: string) => void;
+
     
     // Habits
     handleAddHabit: (title: string) => void;
@@ -245,6 +249,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const [activeCourse, setActiveCourse] = useState<Course | null>(null);
     const [activeProject, setActiveProject] = useState<Project | null>(null);
     const [activeArticle, setActiveArticle] = useState<Article | null>(null);
+    const [activePlan, setActivePlan] = useState<LearningPlan | null>(null);
     const [topic, setTopic] = useState<string>('');
     const [lastActiveCourseId, setLastActiveCourseId] = useState<string|null>(() => localStorage.getItem('learnai-last-active-course'));
     const [isChatOpen, setIsChatOpen] = useState(false);
@@ -770,13 +775,187 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setActiveTask({ id: taskId, type: 'plan_generation', topic, status: 'generating', message: 'Generating Learning Plan...' });
         try {
             const planData = await geminiService.generateLearningPlan(topic, duration);
-            // This is complex, will need to generate courses for each day. For now, let's just create the plan object.
-            setActiveTask(prev => prev?.id === taskId ? { ...prev, status: 'done', message: 'Success!' } : prev);
+            
+            // Create the learning plan with generated courses
+            const planId = `plan-${Date.now()}`;
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const startDate = today.getTime();
+            
+            const newPlan: LearningPlan = {
+                id: planId,
+                title: planData.title || `Learn ${topic}`,
+                startDate,
+                duration: planData.duration || duration || 7,
+                dailyTasks: [],
+                status: 'active',
+                folderId: '' // Will be set to a default folder
+            };
+
+            // Generate courses and tasks for each day
+            const generatedCourses: Course[] = [];
+            const dailyTasks: DailyTask[] = [];
+
+            for (let day = 0; day < newPlan.duration; day++) {
+                const dayTopic = planData.dailyTopics?.[day] || `${topic} - Day ${day + 1}`;
+                const courseId = `course-${planId}-day-${day + 1}`;
+                
+                // Generate course for this day
+                const course: Course = {
+                    id: courseId,
+                    title: dayTopic,
+                    description: `Day ${day + 1} of your ${topic} learning journey`,
+                    category: 'Learning Plan',
+                    technologies: [],
+                    topics: [], // Will be populated by course generation
+                    knowledgeLevel: 'beginner',
+                    progress: new Set(),
+                    about: '',
+                    overview: { totalTopics: 0, totalSubtopics: 0, keyFeatures: [] },
+                    learningOutcomes: [],
+                    skills: [],
+                    learningPlanId: planId,
+                    dayInPlan: day + 1
+                };
+
+                generatedCourses.push(course);
+
+                // Create daily task
+                const taskDate = new Date(startDate + day * 24 * 60 * 60 * 1000);
+                const dailyTask: DailyTask = {
+                    id: `task-${courseId}`,
+                    day: day + 1,
+                    date: taskDate.getTime(),
+                    courseId,
+                    isCompleted: false
+                };
+
+                dailyTasks.push(dailyTask);
+            }
+
+            newPlan.dailyTasks = dailyTasks;
+
+            // Update state
+            setCourses(prev => [...prev, ...generatedCourses]);
+            setGuestUser(prev => ({
+                ...prev,
+                learningPlans: [...prev.learningPlans, newPlan]
+            }));
+
+            // Set as active plan
+            setActivePlan(newPlan);
+            
+            setActiveTask(prev => prev?.id === taskId ? { ...prev, status: 'done', message: 'Learning plan created successfully!' } : prev);
         } catch (e) {
             const errorMessage = e instanceof Error ? e.message : 'Failed to generate plan.';
             setActiveTask(prev => prev?.id === taskId ? { ...prev, status: 'error', message: errorMessage } : prev);
         }
     }, []);
+
+    const handleSelectPlan = useCallback((planId: string | null) => {
+        if (!planId) {
+            setActivePlan(null);
+            return;
+        }
+        const plan = localUser.learningPlans.find(p => p.id === planId);
+        setActivePlan(plan || null);
+    }, [localUser.learningPlans]);
+
+    const handleDeletePlan = useCallback((planId: string) => {
+        // Remove associated courses
+        setCourses(prev => prev.filter(course => course.learningPlanId !== planId));
+        
+        // Remove from user's plans
+        setGuestUser(prev => ({
+            ...prev,
+            learningPlans: prev.learningPlans.filter(plan => plan.id !== planId)
+        }));
+
+        // Clear active plan if it was deleted
+        if (activePlan?.id === planId) {
+            setActivePlan(null);
+        }
+    }, [activePlan]);
+
+    const handleRescheduleTask = useCallback((planId: string, taskId: string, newDate: number) => {
+        setGuestUser(prev => ({
+            ...prev,
+            learningPlans: prev.learningPlans.map(plan => 
+                plan.id === planId 
+                    ? {
+                        ...plan,
+                        dailyTasks: plan.dailyTasks.map(task =>
+                            task.id === taskId ? { ...task, date: newDate } : task
+                        )
+                    }
+                    : plan
+            )
+        }));
+
+        // Update active plan if it's the current one
+        if (activePlan?.id === planId) {
+            setActivePlan(prev => prev ? {
+                ...prev,
+                dailyTasks: prev.dailyTasks.map(task =>
+                    task.id === taskId ? { ...task, date: newDate } : task
+                )
+            } : null);
+        }
+    }, [activePlan]);
+
+    const handleDeleteTaskFromPlan = useCallback((planId: string, taskId: string) => {
+        setGuestUser(prev => ({
+            ...prev,
+            learningPlans: prev.learningPlans.map(plan => 
+                plan.id === planId 
+                    ? {
+                        ...plan,
+                        dailyTasks: plan.dailyTasks.filter(task => task.id !== taskId)
+                    }
+                    : plan
+            )
+        }));
+
+        // Update active plan if it's the current one
+        if (activePlan?.id === planId) {
+            setActivePlan(prev => prev ? {
+                ...prev,
+                dailyTasks: prev.dailyTasks.filter(task => task.id !== taskId)
+            } : null);
+        }
+
+        // Remove associated course
+        const task = localUser.learningPlans.find(p => p.id === planId)?.dailyTasks.find(t => t.id === taskId);
+        if (task) {
+            setCourses(prev => prev.filter(course => course.id !== task.courseId));
+        }
+    }, [activePlan, localUser.learningPlans]);
+
+    const handleToggleTaskComplete = useCallback((planId: string, taskId: string) => {
+        setGuestUser(prev => ({
+            ...prev,
+            learningPlans: prev.learningPlans.map(plan => 
+                plan.id === planId 
+                    ? {
+                        ...plan,
+                        dailyTasks: plan.dailyTasks.map(task =>
+                            task.id === taskId ? { ...task, isCompleted: !task.isCompleted } : task
+                        )
+                    }
+                    : plan
+            )
+        }));
+
+        // Update active plan if it's the current one
+        if (activePlan?.id === planId) {
+            setActivePlan(prev => prev ? {
+                ...prev,
+                dailyTasks: prev.dailyTasks.map(task =>
+                    task.id === taskId ? { ...task, isCompleted: !task.isCompleted } : task
+                )
+            } : null);
+        }
+    }, [activePlan]);
 
     const handleDefineTerm = useCallback(async (term: string, position: { top: number; left: number, right?: number }, targetWidth: number) => {
         setDefinitionState({ term, definition: '', position, targetWidth });
@@ -818,7 +997,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }, []);
 
     const handleGenerateBulkArticlesForPage = useCallback(async (syllabus: string, folderId: string | null) => {
-        // ... implementation ...
+        setBulkArticleGenerationState({ isLoading: true, progressMessage: "Generating article ideas...", generatedArticles: [], error: null });
+        try {
+            const topics = await geminiService.generateArticleTopicsFromSyllabus(syllabus);
+            for (let i = 0; i < topics.length; i++) {
+                setBulkArticleGenerationState(prev => ({ ...prev, progressMessage: `Generating article ${i + 1}/${topics.length}: "${topics[i]}"` }));
+                const articleData = await geminiService.generateBlogPostAndIdeas(topics[i]);
+                const newArticle: Article = {
+                    ...articleData,
+                    id: `article_${Date.now()}_${i}`
+                };
+                setArticles(prev => [...prev, newArticle]);
+                setFolders(prev => prev.map(f => f.id === folderId ? { ...f, articles: [...f.articles, newArticle] } : f));
+                setBulkArticleGenerationState(prev => ({...prev, generatedArticles: [...prev.generatedArticles, newArticle]}));
+            }
+            setBulkArticleGenerationState(prev => ({ ...prev, isLoading: false, progressMessage: "All articles generated successfully!" }));
+        } catch (e) {
+            setBulkArticleGenerationState(prev => ({ ...prev, isLoading: false, error: e instanceof Error ? e.message : 'An error occurred' }));
+        }
     }, []);
 
     const handleShowArticleIdeasModal = useCallback(async (course: Course) => {
@@ -1070,13 +1266,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
     }, []);
 
-    const handleRescheduleTask = useCallback((planId: string, taskId: string, newDate: number) => {
-        // Placeholder for planner CRUD
-    }, []);
 
-    const handleDeleteTaskFromPlan = useCallback((planId: string, taskId: string) => {
-        // Placeholder for planner CRUD
-    }, []);
 
     // --- HABIT ACTIONS ---
     const handleAddHabit = useCallback((title: string) => {
@@ -1121,10 +1311,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }, []);
 
     const value: AppContextType = useMemo(() => ({
-        courses, folders, projects, articles, localUser, activeCourse, activeProject, activeArticle, topic, error, handleGenerateCourse, handleSelectCourse, handleSelectArticle, handleDeleteCourse, handleToggleItemComplete, handleCreateFolder, handleDeleteFolder, handleUpdateFolderName, handleMoveCourseToFolder, handleSaveItemNote, handleDeleteArticle, handleMoveArticleToFolder, lastActiveCourseId, isChatOpen, chatHistory, isChatLoading, toggleChat, sendChatMessage, activeTask, backgroundTasks, cancelTask, minimizeTask, clearBackgroundTask, handleBackgroundTaskClick, handleSelectProject, handleDeleteProject, handleToggleProjectStepComplete, handleGenerateProject, liveInterviewState, handleStartLiveInterview, handleSendLiveInterviewMessage, handleEndLiveInterview, practiceQuizSession, isPracticeQuizLoading, handleStartPracticeQuiz, practiceSession, isPracticeLoading, practiceError, handleStartTopicPractice, codeExplanation, handleGenerateCodeExplanation, createTopicsModalState, openCreateTopicsModal, closeCreateTopicsModal, handleBulkGenerateCourses, createArticlesModalState, openCreateArticlesModal, closeCreateArticlesModal, handleBulkGenerateArticles, handleCreateLearningPlan, unlockAchievement, unlockedAchievementNotification, clearUnlockedAchievementNotification, dailyQuest, handleDefineTerm, definitionState, isDefinitionLoading, closeDefinition, articleCreatorState, handleGenerateBlogPost, bulkArticleGenerationState, handleGenerateBulkArticlesForPage, resetBulkArticleGeneration, articleIdeasModalState, handleShowArticleIdeasModal, closeArticleIdeasModal, handleGenerateArticle, storyModalState, handleShowTopicStory, closeStoryModal, analogyModalState, handleShowTopicAnalogy, closeAnalogyModal, flashcardModalState, handleShowTopicFlashcards, closeFlashcardModal, expandTopicModalState, closeExpandTopicModal, handleExpandTopicInModule, handleShowExpandTopicModal, exploreModalState, handleShowExploreModal, closeExploreModal, mindMapModalState, handleShowMindMapModal, closeMindMapModal, socraticModalState, handleShowSocraticQuiz, closeSocraticModal, interviewPrepState, handleStartInterviewPrep, handleGenerateInterviewQuestions, handleElaborateAnswer, resetInterviewPrep, closeInterviewPrepModal, preloadedTest, clearPreloadedTest, handleUpdateContentBlock, articleTutorModalState, handleOpenArticleTutor, closeArticleTutor, sendArticleTutorMessage, upNextItem, understandingCheckState, handleCheckUnderstanding, closeUnderstandingCheckModal, handleUnderstandingCheckSubmit, projectTutorState, closeProjectTutorModal, handleGetProjectFeedback, handleRescheduleTask, handleDeleteTaskFromPlan,
+        courses, folders, projects, articles, localUser, activeCourse, activeProject, activeArticle, activePlan, topic, error, handleGenerateCourse, handleSelectCourse, handleSelectArticle, handleDeleteCourse, handleToggleItemComplete, handleCreateFolder, handleDeleteFolder, handleUpdateFolderName, handleMoveCourseToFolder, handleSaveItemNote, handleDeleteArticle, handleMoveArticleToFolder, lastActiveCourseId, isChatOpen, chatHistory, isChatLoading, toggleChat, sendChatMessage, activeTask, backgroundTasks, cancelTask, minimizeTask, clearBackgroundTask, handleBackgroundTaskClick, handleSelectProject, handleDeleteProject, handleToggleProjectStepComplete, handleGenerateProject, liveInterviewState, handleStartLiveInterview, handleSendLiveInterviewMessage, handleEndLiveInterview, practiceQuizSession, isPracticeQuizLoading, handleStartPracticeQuiz, practiceSession, isPracticeLoading, practiceError, handleStartTopicPractice, codeExplanation, handleGenerateCodeExplanation, createTopicsModalState, openCreateTopicsModal, closeCreateTopicsModal, handleBulkGenerateCourses, createArticlesModalState, openCreateArticlesModal, closeCreateArticlesModal, handleBulkGenerateArticles, handleCreateLearningPlan, handleSelectPlan, handleDeletePlan, handleRescheduleTask, handleDeleteTaskFromPlan, handleToggleTaskComplete, unlockAchievement, unlockedAchievementNotification, clearUnlockedAchievementNotification, dailyQuest, handleDefineTerm, definitionState, isDefinitionLoading, closeDefinition, articleCreatorState, handleGenerateBlogPost, bulkArticleGenerationState, handleGenerateBulkArticlesForPage, resetBulkArticleGeneration, articleIdeasModalState, handleShowArticleIdeasModal, closeArticleIdeasModal, handleGenerateArticle, storyModalState, handleShowTopicStory, closeStoryModal, analogyModalState, handleShowTopicAnalogy, closeAnalogyModal, flashcardModalState, handleShowTopicFlashcards, closeFlashcardModal, expandTopicModalState, closeExpandTopicModal, handleExpandTopicInModule, handleShowExpandTopicModal, exploreModalState, handleShowExploreModal, closeExploreModal, mindMapModalState, handleShowMindMapModal, closeMindMapModal, socraticModalState, handleShowSocraticQuiz, closeSocraticModal, interviewPrepState, handleStartInterviewPrep, handleGenerateInterviewQuestions, handleElaborateAnswer, resetInterviewPrep, closeInterviewPrepModal, preloadedTest, clearPreloadedTest, handleUpdateContentBlock, articleTutorModalState, handleOpenArticleTutor, closeArticleTutor, sendArticleTutorMessage, upNextItem, understandingCheckState, handleCheckUnderstanding, closeUnderstandingCheckModal, handleUnderstandingCheckSubmit, projectTutorState, closeProjectTutorModal, handleGetProjectFeedback,
         handleAddHabit, handleToggleHabitCompletion, handleDeleteHabit,
     }), [
-        courses, folders, projects, articles, localUser, activeCourse, activeProject, activeArticle, topic, error, handleGenerateCourse, handleSelectCourse, handleSelectArticle, handleDeleteCourse, handleToggleItemComplete, handleCreateFolder, handleDeleteFolder, handleUpdateFolderName, handleMoveCourseToFolder, handleSaveItemNote, handleDeleteArticle, handleMoveArticleToFolder, lastActiveCourseId, isChatOpen, chatHistory, isChatLoading, toggleChat, sendChatMessage, activeTask, backgroundTasks, cancelTask, minimizeTask, clearBackgroundTask, handleBackgroundTaskClick, handleSelectProject, handleDeleteProject, handleToggleProjectStepComplete, handleGenerateProject, liveInterviewState, handleStartLiveInterview, handleSendLiveInterviewMessage, handleEndLiveInterview, practiceQuizSession, isPracticeQuizLoading, handleStartPracticeQuiz, practiceSession, isPracticeLoading, practiceError, handleStartTopicPractice, codeExplanation, handleGenerateCodeExplanation, createTopicsModalState, openCreateTopicsModal, closeCreateTopicsModal, handleBulkGenerateCourses, createArticlesModalState, openCreateArticlesModal, closeCreateArticlesModal, handleBulkGenerateArticles, handleCreateLearningPlan, unlockAchievement, unlockedAchievementNotification, clearUnlockedAchievementNotification, dailyQuest, handleDefineTerm, definitionState, isDefinitionLoading, closeDefinition, articleCreatorState, handleGenerateBlogPost, bulkArticleGenerationState, handleGenerateBulkArticlesForPage, resetBulkArticleGeneration, articleIdeasModalState, handleShowArticleIdeasModal, closeArticleIdeasModal, handleGenerateArticle, storyModalState, handleShowTopicStory, closeStoryModal, analogyModalState, handleShowTopicAnalogy, closeAnalogyModal, flashcardModalState, handleShowTopicFlashcards, closeFlashcardModal, expandTopicModalState, closeExpandTopicModal, handleExpandTopicInModule, handleShowExpandTopicModal, exploreModalState, handleShowExploreModal, closeExploreModal, mindMapModalState, handleShowMindMapModal, closeMindMapModal, socraticModalState, handleShowSocraticQuiz, closeSocraticModal, interviewPrepState, handleStartInterviewPrep, handleGenerateInterviewQuestions, handleElaborateAnswer, resetInterviewPrep, closeInterviewPrepModal, preloadedTest, clearPreloadedTest, handleUpdateContentBlock, articleTutorModalState, handleOpenArticleTutor, closeArticleTutor, sendArticleTutorMessage, upNextItem, understandingCheckState, handleCheckUnderstanding, closeUnderstandingCheckModal, handleUnderstandingCheckSubmit, projectTutorState, closeProjectTutorModal, handleGetProjectFeedback, handleRescheduleTask, handleDeleteTaskFromPlan,
+        courses, folders, projects, articles, localUser, activeCourse, activeProject, activeArticle, activePlan, topic, error, handleGenerateCourse, handleSelectCourse, handleSelectArticle, handleDeleteCourse, handleToggleItemComplete, handleCreateFolder, handleDeleteFolder, handleUpdateFolderName, handleMoveCourseToFolder, handleSaveItemNote, handleDeleteArticle, handleMoveArticleToFolder, lastActiveCourseId, isChatOpen, chatHistory, isChatLoading, toggleChat, sendChatMessage, activeTask, backgroundTasks, cancelTask, minimizeTask, clearBackgroundTask, handleBackgroundTaskClick, handleSelectProject, handleDeleteProject, handleToggleProjectStepComplete, handleGenerateProject, liveInterviewState, handleStartLiveInterview, handleSendLiveInterviewMessage, handleEndLiveInterview, practiceQuizSession, isPracticeQuizLoading, handleStartPracticeQuiz, practiceSession, isPracticeLoading, practiceError, handleStartTopicPractice, codeExplanation, handleGenerateCodeExplanation, createTopicsModalState, openCreateTopicsModal, closeCreateTopicsModal, handleBulkGenerateCourses, createArticlesModalState, openCreateArticlesModal, closeCreateArticlesModal, handleBulkGenerateArticles, handleCreateLearningPlan, handleSelectPlan, handleDeletePlan, handleRescheduleTask, handleDeleteTaskFromPlan, handleToggleTaskComplete, unlockAchievement, unlockedAchievementNotification, clearUnlockedAchievementNotification, dailyQuest, handleDefineTerm, definitionState, isDefinitionLoading, closeDefinition, articleCreatorState, handleGenerateBlogPost, bulkArticleGenerationState, handleGenerateBulkArticlesForPage, resetBulkArticleGeneration, articleIdeasModalState, handleShowArticleIdeasModal, closeArticleIdeasModal, handleGenerateArticle, storyModalState, handleShowTopicStory, closeStoryModal, analogyModalState, handleShowTopicAnalogy, closeAnalogyModal, flashcardModalState, handleShowTopicFlashcards, closeFlashcardModal, expandTopicModalState, closeExpandTopicModal, handleExpandTopicInModule, handleShowExpandTopicModal, exploreModalState, handleShowExploreModal, closeExploreModal, mindMapModalState, handleShowMindMapModal, closeMindMapModal, socraticModalState, handleShowSocraticQuiz, closeSocraticModal, interviewPrepState, handleStartInterviewPrep, handleGenerateInterviewQuestions, handleElaborateAnswer, resetInterviewPrep, closeInterviewPrepModal, preloadedTest, clearPreloadedTest, handleUpdateContentBlock, articleTutorModalState, handleOpenArticleTutor, closeArticleTutor, sendArticleTutorMessage, upNextItem, understandingCheckState, handleCheckUnderstanding, closeUnderstandingCheckModal, handleUnderstandingCheckSubmit, projectTutorState, closeProjectTutorModal, handleGetProjectFeedback,
         handleAddHabit, handleToggleHabitCompletion, handleDeleteHabit
     ]);
 

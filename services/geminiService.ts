@@ -14,6 +14,8 @@ try {
 }
 
 
+
+
 // --- SCHEMAS ---
 const quizSchema = {
     type: Type.OBJECT,
@@ -323,7 +325,7 @@ const callGemini = async (contents: any, schema?: object) => {
         }
         return text;
     } catch (error) {
-        console.error("Error calling Gemini API:", error);
+        console.error("Error calling Gemini API:", JSON.stringify(error, null, 2));
         if (error instanceof SyntaxError) throw new Error("Failed to parse the AI's response. The format was invalid.");
         if (error instanceof Error && error.message.includes('INVALID_ARGUMENT')) throw new Error("Request contains an invalid argument.");
         throw new Error("The AI model failed to generate content.");

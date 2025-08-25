@@ -8,7 +8,8 @@ import { useTheme } from './context/ThemeContext';
 import Sidebar from './components/common/Sidebar';
 import LoadingDisplay from './components/common/LoadingDisplay';
 import CourseView from './components/course/CourseView';
-import PlannerPage from './components/planner/PlannerPage';
+import EnhancedPlannerPage from './components/planner/EnhancedPlannerPage';
+import PersonalizedDashboard from './components/dashboard/PersonalizedDashboard';
 import AssessmentPage from './components/assessment/AssessmentPage';
 import CreateModal from './components/modals/CreateCourseModal';
 import AIChatModal from './components/chat/AIChatModal';
@@ -210,11 +211,11 @@ function App() {
                     task={activeTask} 
                     onCancel={() => {
                         cancelTask(activeTask.id);
-                        setView('planner');
+                        setView('dashboard');
                     }}
                     onMinimize={() => {
                         minimizeTask(activeTask.id);
-                        setView('planner');
+                        setView('dashboard');
                     }}
                 />
             </div>
@@ -238,7 +239,7 @@ function App() {
         return <ProfilePage />;
       case 'assessment':
         return <AssessmentPage 
-            onBackToDashboard={() => setView('planner')} 
+            onBackToDashboard={() => setView('dashboard')} 
             onGenerateCourse={(level, topic) => {
               handleGenerateCourse(topic, level, null, 'theory', 'balanced', undefined, '', false);
             }}
@@ -246,21 +247,20 @@ function App() {
       case 'interview':
         return <InterviewPage onStartLiveInterview={handleStartLiveInterview} onStartInterviewPrep={handleStartInterviewPrep} />;
       case 'projects':
-        return <ProjectsPage onSelectProject={(projectId) => handleSelectProject(projectId)} onBackToDashboard={() => setView('planner')} />;
+        return <ProjectsPage onSelectProject={(projectId) => handleSelectProject(projectId)} onBackToDashboard={() => setView('dashboard')} />;
       case 'practice':
-        return <PracticePage onBack={() => { setView('planner'); }} />;
+        return <PracticePage onBack={() => { setView('dashboard'); }} />;
       case 'practice_quiz':
-        return <QuizSessionPage onBack={() => setView('planner')} />;
+        return <QuizSessionPage onBack={() => setView('dashboard')} />;
       case 'habits':
         return <HabitsPage />;
       case 'code_explainer':
         return <CodeExplainerPage />;
       case 'planner':
+        return <EnhancedPlannerPage />;
+      case 'dashboard':
       default:
-        return <PlannerPage 
-            onNavigate={setView} 
-            onStartCreate={() => setIsCreateModalOpen(true)} 
-        />;
+        return <PersonalizedDashboard />;
     }
   };
 

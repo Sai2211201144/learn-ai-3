@@ -3,6 +3,8 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import type { Course, Folder, View, Article } from '../../types';
 import { useAppContext } from '../../context/AppContext';
+import { useFirebaseAuth } from '../../context/FirebaseAuthContext';
+
 import { 
     PlusIcon, 
     MagnifyingGlassIcon,
@@ -104,9 +106,20 @@ const PlannerPage: React.FC<PlannerPageProps> = ({ onNavigate, onStartCreate }) 
         articles,
         projects,
         localUser,
-        handleCreateFolder,
-        handleCreateLearningPlan
+        handleCreateFolder
     } = useAppContext();
+    
+    const { 
+        user: firebaseUser, 
+        profile: userProfile,
+        learningPlans,
+        activePlan: firebaseActivePlan
+    } = useFirebaseAuth();
+    
+    // Get user name from Firebase or local user
+    const userName = firebaseUser ? 
+        (userProfile?.full_name || firebaseUser.displayName || localUser?.name || 'Learner') : 
+        (localUser?.name || 'Learner');
     
     const [searchTerm, setSearchTerm] = useState('');
     const [showFolderForm, setShowFolderForm] = useState(false);
@@ -114,9 +127,13 @@ const PlannerPage: React.FC<PlannerPageProps> = ({ onNavigate, onStartCreate }) 
     const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
     const [createModalContent, setCreateModalContent] = useState<'none' | 'single' | 'bulk'>('none');
     
+    // Use Firebase activePlan if available, otherwise fall back to local
     const activePlan = useMemo(() => {
+        if (firebaseUser && firebaseActivePlan) {
+            return firebaseActivePlan;
+        }
         return localUser.learningPlans?.find(plan => plan.status === 'active');
-    }, [localUser.learningPlans]);
+    }, [firebaseUser, firebaseActivePlan, localUser.learningPlans]);
     
     const filteredFolders = useMemo(() => {
         const courseMap = new Map(courses.map(c => [c.id, c]));
@@ -159,7 +176,7 @@ const PlannerPage: React.FC<PlannerPageProps> = ({ onNavigate, onStartCreate }) 
                     <h1 className="text-3xl font-bold text-[var(--color-foreground)]">
                         Planner
                     </h1>
-                    <p className="text-[var(--color-muted-foreground)] mt-1">Ready to dive back in and learn something new today, {localUser.name}?</p>
+                    <p className="text-[var(--color-muted-foreground)] mt-1">Ready to dive back in and learn something new today, {userName}?</p>
                 </div>
                 <div className="relative">
                     <button 
@@ -183,11 +200,19 @@ const PlannerPage: React.FC<PlannerPageProps> = ({ onNavigate, onStartCreate }) 
             </header>
 
             <div className="space-y-8 mb-8">
-                 {activePlan ? (
+                 {activePlan && 'dailyTasks' in activePlan ? (
                     <>
-                        <DailyGoalCard plan={activePlan} />
-                        <WeeklyPlanner plan={activePlan} />
+                        <DailyGoalCard plan={activePlan as any} />
+                        <WeeklyPlanner plan={activePlan as any} />
                     </>
+                ) : activePlan ? (
+                    <div className="text-center py-12 px-6 bg-[var(--color-card)] border border-[var(--color-border)] rounded-xl">
+                        <CalendarDaysIcon className="w-12 h-12 text-[var(--color-muted-foreground)]/30 mx-auto mb-4" />
+                        <h3 className="text-lg font-semibold text-[var(--color-foreground)]">Firebase Plan Active</h3>
+                        <p className="text-[var(--color-muted-foreground)] mt-2">
+                            {(activePlan as any).title} is active. Use the Enhanced Planner for full functionality.
+                        </p>
+                    </div>
                 ) : (
                     <div className="text-center py-20 px-6 bg-[var(--color-secondary)] border-2 border-dashed border-[var(--color-border)] rounded-xl">
                         <CalendarDaysIcon className="w-16 h-16 text-[var(--color-muted-foreground)]/30 mx-auto mb-4" />
@@ -228,7 +253,6 @@ const PlannerPage: React.FC<PlannerPageProps> = ({ onNavigate, onStartCreate }) 
             <CreatePlanModal 
                 isOpen={isPlanModalOpen}
                 onClose={() => setIsPlanModalOpen(false)}
-                onGenerate={handleCreateLearningPlan}
             />
 
             {createModalContent !== 'none' && (
