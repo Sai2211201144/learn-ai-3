@@ -296,31 +296,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Fetch daily quest on load
     useEffect(() => {
-        const today = new Date().toDateString();
-        const lastQuestDate = localStorage.getItem('learnai-quest-date');
-
         const fetchQuest = async () => {
-            if (today !== lastQuestDate) {
-                try {
-                    const questData = await geminiService.generateDailyQuest();
-                    const newQuest = { ...questData, completed: false };
-                    setDailyQuest(newQuest);
-                    localStorage.setItem('learnai-quest', JSON.stringify(newQuest));
-                    localStorage.setItem('learnai-quest-date', today);
-                } catch (e) {
-                    console.error("Failed to fetch daily quest", e);
-                }
-            } else {
+            const today = new Date().toDateString();
+            const lastQuestDate = localStorage.getItem('learnai-quest-date');
+
+            if (today === lastQuestDate) {
                 const savedQuest = localStorage.getItem('learnai-quest');
                 if (savedQuest) {
                     setDailyQuest(JSON.parse(savedQuest));
-                } else {
-                    // refetch if it's missing for some reason
-                    localStorage.removeItem('learnai-quest-date');
-                    fetchQuest();
+                    return;
                 }
             }
+
+            // If it's a new day or the quest is missing from storage, fetch a new one.
+            try {
+                console.log("Fetching new daily quest as it is a new day or quest is missing from storage.");
+                const questData = await geminiService.generateDailyQuest();
+                const newQuest = { ...questData, completed: false };
+                setDailyQuest(newQuest);
+                localStorage.setItem('learnai-quest', JSON.stringify(newQuest));
+                localStorage.setItem('learnai-quest-date', today);
+            } catch (e) {
+                console.error("Failed to fetch daily quest", e);
+            }
         };
+
         fetchQuest();
     }, []);
 
